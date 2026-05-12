@@ -24,10 +24,17 @@ App runs at http://localhost:5173.
 The backend is not required to run the frontend. Use mock data with:
 
 ```bash
+cd services/frontend
 VITE_USE_MOCK=true npm run dev
 ```
 
-Remove the flag when the backend is ready — no code changes needed.
+When the backend is ready, just run without the flag:
+
+```bash
+npm run dev
+```
+
+The mock simulates a ~300ms network delay and supports search (case-insensitive title match). No code changes needed to switch — just the env var.
 
 ## Project structure
 
