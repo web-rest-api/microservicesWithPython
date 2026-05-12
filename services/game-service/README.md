@@ -35,17 +35,21 @@ game-service/
 Defines the `games` table. This is the only file that knows about columns.
 
 ```python
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, String, Integer, DateTime
+from datetime import datetime, timezone
+import uuid
 from app.database import Base
 
 class Game(Base):
     __tablename__ = "games"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String, nullable=False)
     genre = Column(String, nullable=False)
     platform = Column(String, nullable=False)
+    release_year = Column(Integer, nullable=True)
     cover_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 ```
 
 ---
@@ -56,21 +60,32 @@ class Game(Base):
 
 ```python
 from pydantic import BaseModel
+from datetime import datetime
 
 class GameCreate(BaseModel):
     title: str
     genre: str
     platform: str
+    release_year: int | None = None
     cover_url: str | None = None
 
 class GameOut(BaseModel):
-    id: int
+    id: str
     title: str
     genre: str
     platform: str
+    release_year: int | None
     cover_url: str | None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
+
+class GameList(BaseModel):
+    """Paginated envelope — all list endpoints return this shape."""
+    items: list[GameOut]
+    total: int
+    limit: int
+    offset: int
 ```
 
 ---
@@ -114,13 +129,13 @@ from app.schemas import GameCreate
 def create_game(db: Session, data: GameCreate) -> Game:
     ...
 
-def get_game(db: Session, game_id: int) -> Game | None:
+def get_game(db: Session, game_id: str) -> Game | None:
     ...
 
-def list_games(db: Session) -> list[Game]:
+def list_games(db: Session, limit: int = 20, offset: int = 0) -> tuple[list[Game], int]:
     ...
 
-def search_games(db: Session, q: str) -> list[Game]:
+def search_games(db: Session, q: str, limit: int = 20, offset: int = 0) -> tuple[list[Game], int]:
     # hint: use .filter(Game.title.ilike(f"%{q}%"))
     ...
 ```
@@ -134,19 +149,19 @@ Calls the repository and returns Pydantic schemas (not raw ORM objects) to the r
 ```python
 from sqlalchemy.orm import Session
 from app import repository
-from app.schemas import GameCreate, GameOut
+from app.schemas import GameCreate, GameOut, GameList
 
 def add_game(db: Session, data: GameCreate) -> GameOut:
     ...
 
-def fetch_game(db: Session, game_id: int) -> GameOut:
+def fetch_game(db: Session, game_id: str) -> GameOut:
     # raise ValueError if not found — routes.py turns it into a 404
     ...
 
-def fetch_all_games(db: Session) -> list[GameOut]:
+def fetch_all_games(db: Session, limit: int = 20, offset: int = 0) -> GameList:
     ...
 
-def find_games(db: Session, q: str) -> list[GameOut]:
+def find_games(db: Session, q: str, limit: int = 20, offset: int = 0) -> GameList:
     ...
 ```
 
@@ -170,16 +185,16 @@ router = APIRouter(prefix="/v1/games", tags=["games"])
 def create_game(data: schemas.GameCreate, db: Session = Depends(get_db)):
     ...
 
-@router.get("/", response_model=list[schemas.GameOut])
-def list_games(db: Session = Depends(get_db)):
+@router.get("/", response_model=schemas.GameList)
+def list_games(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
     ...
 
-@router.get("/search", response_model=list[schemas.GameOut])
-def search_games(q: str, db: Session = Depends(get_db)):
+@router.get("/search", response_model=schemas.GameList)
+def search_games(q: str, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
     ...
 
 @router.get("/{game_id}", response_model=schemas.GameOut)
-def get_game(game_id: int, db: Session = Depends(get_db)):
+def get_game(game_id: str, db: Session = Depends(get_db)):
     ...
 ```
 

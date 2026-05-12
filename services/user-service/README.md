@@ -35,15 +35,20 @@ user-service/
 Defines the `users` table. This is the only file that knows about columns.
 
 ```python
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, String, Boolean, DateTime
+from datetime import datetime, timezone
+import uuid
 from app.database import Base
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 ```
 
 ---
@@ -54,17 +59,28 @@ Two schemas: one for input, one for output. Keep them separate — the response 
 
 ```python
 from pydantic import BaseModel
+from datetime import datetime
 
 class UserCreate(BaseModel):
     username: str
     email: str
+    password: str          # plain-text on the way in — hash it in the service layer
 
 class UserOut(BaseModel):
-    id: int
+    id: str
     username: str
     email: str
+    is_active: bool
+    created_at: datetime
 
     model_config = {"from_attributes": True}
+
+class UserList(BaseModel):
+    """Paginated envelope — all list endpoints return this shape."""
+    items: list[UserOut]
+    total: int
+    limit: int
+    offset: int
 ```
 
 ---
@@ -105,18 +121,24 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.schemas import UserCreate
 
-def create_user(db: Session, data: UserCreate) -> User:
-    user = User(**data.model_dump())
+def create_user(db: Session, data: UserCreate, hashed_password: str) -> User:
+    user = User(
+        username=data.username,
+        email=data.email,
+        hashed_password=hashed_password,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
-def get_user(db: Session, user_id: int) -> User | None:
+def get_user(db: Session, user_id: str) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
 
-def list_users(db: Session) -> list[User]:
-    return db.query(User).all()
+def list_users(db: Session, limit: int = 20, offset: int = 0) -> tuple[list[User], int]:
+    total = db.query(User).count()
+    users = db.query(User).offset(offset).limit(limit).all()
+    return users, total
 ```
 
 ---
@@ -128,21 +150,31 @@ Calls the repository and returns Pydantic schemas (not raw ORM objects) to the r
 ```python
 from sqlalchemy.orm import Session
 from app import repository
-from app.schemas import UserCreate, UserOut
+from app.schemas import UserCreate, UserOut, UserList
+
+def _hash_password(plain: str) -> str:
+    # for now a placeholder — swap for passlib in Module 6
+    return plain + "_hashed"
 
 def add_user(db: Session, data: UserCreate) -> UserOut:
-    user = repository.create_user(db, data)
+    hashed = _hash_password(data.password)
+    user = repository.create_user(db, data, hashed)
     return UserOut.model_validate(user)
 
-def fetch_user(db: Session, user_id: int) -> UserOut:
+def fetch_user(db: Session, user_id: str) -> UserOut:
     user = repository.get_user(db, user_id)
     if user is None:
         raise ValueError(f"User {user_id} not found")
     return UserOut.model_validate(user)
 
-def fetch_all_users(db: Session) -> list[UserOut]:
-    users = repository.list_users(db)
-    return [UserOut.model_validate(u) for u in users]
+def fetch_all_users(db: Session, limit: int = 20, offset: int = 0) -> UserList:
+    users, total = repository.list_users(db, limit=limit, offset=offset)
+    return UserList(
+        items=[UserOut.model_validate(u) for u in users],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 ```
 
 The `ValueError` raised here gets caught in `routes.py` and turned into an HTTP 404.
@@ -165,12 +197,12 @@ router = APIRouter(prefix="/v1/users", tags=["users"])
 def create_user(data: schemas.UserCreate, db: Session = Depends(get_db)):
     return service.add_user(db, data)
 
-@router.get("/", response_model=list[schemas.UserOut])
-def list_users(db: Session = Depends(get_db)):
-    return service.fetch_all_users(db)
+@router.get("/", response_model=schemas.UserList)
+def list_users(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
+    return service.fetch_all_users(db, limit=limit, offset=offset)
 
 @router.get("/{user_id}", response_model=schemas.UserOut)
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(user_id: str, db: Session = Depends(get_db)):
     try:
         return service.fetch_user(db, user_id)
     except ValueError as e:
