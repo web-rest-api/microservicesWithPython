@@ -26,11 +26,15 @@ A bounded context is a part of the system that has a clear responsibility and ow
 
 For each bounded context you identify, fill in the table:
 
-| Bounded Context | Responsibilities                                         | Owned Entities | Team        |
-| --------------- | -------------------------------------------------------- | -------------- | ----------- |
-| Identity        | Manages who users are, handles registration and profiles | User, Session  | Platform    |
-| Game Library    | _(fill in)_                                              | _(fill in)_    | _(fill in)_ |
-| _(add more)_    |                                                          |                |             |
+| Bounded Context        | Responsibilities                                                              | Owned Entities                           | Team        |
+| ---------------------- | ----------------------------------------------------------------------------- | ---------------------------------------- | ----------- |
+| Identity / Auth        | Handles registration, login, JWT authentication, and password security        | User, Credentials, Session, RefreshToken | Platform    |
+| Profile Service        | Manages public user profiles and social information                           | Profile, Avatar, Bio, FriendRelation     | Social      |
+| Game Library           | Stores game information and users’ game collections                           | Game, Genre, UserLibraryEntry            | Discovery   |
+| Activity Service       | Tracks gameplay activity and publishes activity events                        | Activity, PlaySession, StatusUpdate      | Engagement  |
+| Recommendation Service | Generates personalized game recommendations                                   | Recommendation, RecommendationScore      | Discovery   |
+| Notification Service   | Sends notifications to users about social activity                            | Notification, DeliveryStatus             | Platform    |
+| Logging Service        | Stores GDPR-compliant logs and consent tracking                               | ConsentRecord, ActivityLog, AuditEvent   | Compliance  |
 
 There is no single correct answer: what matters is that you can justify each row.
 
@@ -54,6 +58,102 @@ Protocol: RabbitMQ message (async — why not REST here?)
 Payload: { activity_id, user_id, action, game_id, timestamp }
 ```
 
+### 1. Activity Service → Logging Service
+
+- **Direction:** `activity-service → logging-service`
+- **Trigger:** User starts/stops playing a game
+- **Protocol:** RabbitMQ event (async)
+- **Payload:**
+
+```json
+{
+  "activity_id": "a123",
+  "user_id": "u42",
+  "game_id": "g88",
+  "action": "started_playing",
+  "timestamp": "2026-05-15T14:20:00Z"
+}
+```
+
+**Why async?**
+
+Logging should not block gameplay actions. If logging becomes slow or unavailable, the activity service should still work normally.
+
+---
+
+### 2. Activity Service → Notification Service
+
+- **Direction:** `activity-service → notification-service`
+- **Trigger:** Friend starts playing a game
+- **Protocol:** RabbitMQ event (async)
+- **Payload:**
+
+```json
+{
+  "user_id": "u42",
+  "friend_ids": ["u10", "u11"],
+  "game_id": "g88",
+  "event": "friend_started_game",
+  "timestamp": "2026-05-15T14:20:00Z"
+}
+```
+
+**Why async?**
+
+Notifications are background tasks and should not slow down the user experience.
+
+---
+
+### 3. Gateway → Auth Service
+
+- **Direction:** `gateway → auth-service`
+- **Trigger:** User login or JWT validation
+- **Protocol:** REST (synchronous)
+- **Payload:**
+
+```json
+{
+  "username": "player1",
+  "password": "********"
+}
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "jwt-token",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+```
+
+**Why REST?**
+
+Authentication requires an immediate response before the request can continue.
+
+---
+
+### 4. Activity Service → Recommendation Service
+
+- **Direction:** `activity-service → recommendation-service`
+- **Trigger:** New gameplay activity
+- **Protocol:** RabbitMQ event (async)
+- **Payload:**
+
+```json
+{
+  "user_id": "u42",
+  "game_id": "g88",
+  "playtime_minutes": 120,
+  "genre": "RPG"
+}
+```
+
+**Why async?**
+
+Recommendations do not need to update instantly and can be processed in the background.
+
 Focus on the flows that feel non-obvious. You do not need to document every possible pair.
 
 ---
@@ -68,6 +168,56 @@ Draw the full GameHub service map:
 - One box at the top labelled **gateway** — all client requests enter here, no client ever calls a service directly
 
 This can be a sketch on paper, a whiteboard photo, or ASCII art committed to your branch.
+
+```text
+                        +----------------+
+                        |    CLIENTS     |
+                        +----------------+
+                                 |
+                                 v
+                       +------------------+
+                       |      GATEWAY     |
+                       | JWT / Routing    |
+                       +------------------+
+                          |      |      |
+                REST      |      |      | REST
+                          v      v      v
+                 +---------+  +-------------+
+                 |  AUTH   |  |   PROFILE   |
+                 +---------+  +-------------+
+                        |
+                        |
+                        v
+                 +---------------+
+                 | GAME LIBRARY  |
+                 +---------------+
+                        |
+                        | REST
+                        v
+                 +---------------+
+                 |   ACTIVITY    |
+                 +---------------+
+                    /        \
+           RabbitMQ          RabbitMQ
+                /                \
+               v                  v
+      +----------------+   +----------------+
+      | NOTIFICATION   |   |    LOGGING     |
+      |   Node.js      |   | Flask + GDPR   |
+      +----------------+   +----------------+
+                \
+                 \ RabbitMQ
+                  \
+                   v
+          +-------------------+
+          | RECOMMENDATIONS   |
+          +-------------------+
+```
+
+Legend:
+
+- Solid arrows = synchronous REST
+- Dashed/event arrows = async RabbitMQ events
 
 ---
 
