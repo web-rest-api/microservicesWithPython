@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+alembic
+pytest
+aiosqlite
+ruff
+mypy
+httpx
