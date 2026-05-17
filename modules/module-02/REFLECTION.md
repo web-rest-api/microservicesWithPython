@@ -1,7 +1,7 @@
 # Module 2 — Reflection
 
-**Team name**: _______________
-**Branch**: `module-02/<team-name>`
+**Team name**: Bahjat
+**Branch**: `module-02/<bahjat`
 **Submitted**: before Module 3 lesson
 
 ---
@@ -18,7 +18,7 @@ You built a service with distinct layers: models, schemas, repository, service, 
 
 Think about what happens six months later when someone new joins the team, or when you need to swap SQLite for PostgreSQL. What does the layered structure protect you from?
 
-> *Your answer:*
+> Splitting the code into layers protects the application from massive rewrites. If we decide to swap from SQLite to PostgreSQL later, we only have to update the repository.py and database.py files. The routing (routes.py) and business logic (service.py) don't care what database is used, so they remain completely untouched. It also makes testing easier because you can test business logic without needing a live database.
 
 ---
 
@@ -30,7 +30,7 @@ Each service owns its data exclusively — no other service is allowed to touch 
 
 Give a concrete scenario, not a general principle.
 
-> *Your answer:*
+> If the Activity Service was allowed to write directly to the games table in the Game Service database, it might bypass important validation rules (like adding a game without a cover_url). Even worse, if the Game Service team updates their database schema (like changing the column name title to game_name), the Activity Service's hardcoded SQL query would instantly break and crash without the Game Service team even knowing why.
 
 ---
 
@@ -42,7 +42,7 @@ You now have models, schemas, a repository, a service, and routes — five layer
 
 And at what point does the complexity start to pay off? Where is the tipping point?
 
-> *Your answer:*
+>The cost is massive boilerplate. To do a simple SELECT * FROM games, you have to write code across five different files, which feels incredibly slow for a basic CRUD app. This complexity only pays off when the app scales — when you start adding caching, role-based permissions, or external API calls, having dedicated layers keeps the codebase from turning into spaghetti.
 
 ---
 
