@@ -1,7 +1,7 @@
 # Module 1 — Service Decomposition
 
 **Duration**: 2h in class
-**Branch to submit**: `module-01/<team-name>`
+**Branch to submit**: `module-01/<bahjat>`
 
 ---
 
@@ -26,11 +26,13 @@ A bounded context is a part of the system that has a clear responsibility and ow
 
 For each bounded context you identify, fill in the table:
 
-| Bounded Context | Responsibilities                                         | Owned Entities | Team        |
-| --------------- | -------------------------------------------------------- | -------------- | ----------- |
-| Identity        | Manages who users are, handles registration and profiles | User, Session  | Platform    |
-| Game Library    | _(fill in)_                                              | _(fill in)_    | _(fill in)_ |
-| _(add more)_    |                                                          |                |             |
+| Bounded Context | Responsibilities | Owned Entities | Team |
+| Identity | Manages who users are, handles registration and profiles | User, Session | Platform |
+| Game Library | Manages the catalog of games, titles, and genres | Game, Category | Content |
+| Activity | Manages social feeds, friendships, and logging what people play | Activity, Friendship | Social |
+| Notification | Manages delivering alerts and messages to users | Notification, DeviceToken | Communications |
+| Logging | Records system events, checks GDPR consent | Log, ConsentRecord | Infra |
+
 
 There is no single correct answer: what matters is that you can justify each row.
 
@@ -56,6 +58,24 @@ Payload: { activity_id, user_id, action, game_id, timestamp }
 
 Focus on the flows that feel non-obvious. You do not need to document every possible pair.
 
+Contract 1:
+identity-service → activity-service
+Trigger: a user logs in successfully
+Protocol: RabbitMQ message (async)
+Payload: { user_id, session_id, timestamp }
+
+Contract 2:
+activity-service → notification-service
+Trigger: a user earns an achievement or milestone
+Protocol: RabbitMQ message (async)
+Payload: { user_id, achievement_id, message, timestamp }
+
+Contract 3:
+gateway → identity-service
+Trigger: a client sends a login or registration request
+Protocol: REST (sync)
+Payload: { username, email, password_hash }
+
 ---
 
 ## Task 3 — Draw the service map _(~20 min)_
@@ -69,6 +89,15 @@ Draw the full GameHub service map:
 
 This can be a sketch on paper, a whiteboard photo, or ASCII art committed to your branch.
 
+             [Client]
+                |
+           [Gateway]
+        _____|__|__|__|_____
+        |    |  |  |      |
+    [identity][game][activity][notification][logging]
+        |_async__|    |___async___|___async___|
+
+
 ---
 
 ## Discussion _(~15 min)_
@@ -76,8 +105,14 @@ This can be a sketch on paper, a whiteboard photo, or ASCII art committed to you
 Three questions to discuss as a team before you leave:
 
 1. Why does `notification-service` use Node.js instead of Python like the rest? What does that tell you about microservices and technology choices?
+Because node handles lots of simultaneous I/O better. Each service can use whatever language fits its job.
+
 2. What is the risk of `activity-service` calling `logging-service` synchronously — why might you prefer an async event instead?
+if logging-service crashes, activity-service crashes too. Async decouples them.
+
 3. Why does `logging-service` need a GDPR consent check before recording any activity?
+you can't store personal data without consent. Logging is the last gate before data is written.
+
 
 You do not need to write these answers down — they are warm-up for your REFLECTION.md.
 
