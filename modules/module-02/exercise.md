@@ -1,7 +1,7 @@
 # Module 2 — FastAPI Service Design
 
 **Duration**: 2h in class
-**Branch to submit**: `module-02/<team-name>`
+**Branch to submit**: `module-02/<bahjat>`
 
 ---
 

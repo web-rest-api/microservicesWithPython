@@ -1,23 +1,22 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy.orm import Session
 from app.models import Game
 from app.schemas import GameCreate
 
-async def create_game(db: AsyncSession, game: GameCreate):
-    db_game = Game(**game.model_dump())
-    db.add(db_game)
-    await db.commit()
-    await db.refresh(db_game)
-    return db_game
+def create_game(db: Session, data: GameCreate) -> Game:
+    game = Game(
+        title=data.title,
+        genre=data.genre,
+        description=data.description,
+    )
+    db.add(game)
+    db.commit()
+    db.refresh(game)
+    return game
 
-async def get_games(db: AsyncSession):
-    result = await db.execute(select(Game))
-    return result.scalars().all()
+def get_game(db: Session, game_id: str) -> Game | None:
+    return db.query(Game).filter(Game.id == game_id).first()
 
-async def get_game_by_id(db: AsyncSession, game_id: int):
-    result = await db.execute(select(Game).where(Game.id == game_id))
-    return result.scalar_one_or_none()
-
-async def search_games(db: AsyncSession, term: str):
-    result = await db.execute(select(Game).where(Game.title.ilike(f"%{term}%")))
-    return result.scalars().all()
+def list_games(db: Session, limit: int = 20, offset: int = 0) -> tuple[list[Game], int]:
+    total = db.query(Game).count()
+    games = db.query(Game).offset(offset).limit(limit).all()
+    return games, total

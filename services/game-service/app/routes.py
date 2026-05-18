@@ -1,26 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from app.database import get_db
-import app.service as service
-import app.schemas as schemas
+from app import service
+from app.schemas import GameCreate, GameOut, GameList
 
 router = APIRouter(prefix="/v1/games", tags=["games"])
 
-@router.post("", response_model=schemas.GameResponse)
-async def create_game(game: schemas.GameCreate, db: AsyncSession = Depends(get_db)):
-    return await service.add_game(db, game)
+@router.post("/", status_code=201, response_model=GameOut)
+def create_game(data: GameCreate, db: Session = Depends(get_db)):
+    return service.add_game(db, data)
 
-@router.get("", response_model=list[schemas.GameResponse])
-async def list_games(db: AsyncSession = Depends(get_db)):
-    return await service.list_games(db)
+@router.get("/", response_model=GameList)
+def list_games(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
+    return service.fetch_all_games(db, limit=limit, offset=offset)
 
-@router.get("/search", response_model=list[schemas.GameResponse])
-async def search_games(q: str, db: AsyncSession = Depends(get_db)):
-    return await service.search(db, q)
-
-@router.get("/{id}", response_model=schemas.GameResponse)
-async def get_game(id: int, db: AsyncSession = Depends(get_db)):
-    game = await service.get_game(db, id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    return game
+@router.get("/{game_id}", response_model=GameOut)
+def get_game(game_id: str, db: Session = Depends(get_db)):
+    try:
+        return service.fetch_game(db, game_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

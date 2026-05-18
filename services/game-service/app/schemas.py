@@ -1,16 +1,23 @@
 from pydantic import BaseModel
+from datetime import datetime
 
-class GameBase(BaseModel):
+class GameCreate(BaseModel):
     title: str
     genre: str
-    platform: str
-    cover_url: str
+    description: str
 
-class GameCreate(GameBase):
-    pass
+class GameOut(BaseModel):
+    id: str
+    title: str
+    genre: str
+    description: str | None
+    is_active: bool
+    created_at: datetime
 
-class GameResponse(GameBase):
-    id: int
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
+class GameList(BaseModel):
+    items: list[GameOut]
+    total: int
+    limit: int
+    offset: int
