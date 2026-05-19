@@ -69,7 +69,8 @@ Draw the full GameHub service map:
 
 This can be a sketch on paper, a whiteboard photo, or ASCII art committed to your branch.
 
----
+---------
+
 
 ## Discussion _(~15 min)_
 
