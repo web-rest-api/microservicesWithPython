@@ -25,12 +25,14 @@ Read these two documents before doing anything else:
 A bounded context is a part of the system that has a clear responsibility and owns its data exclusively. No other service should reach into its database.
 
 For each bounded context you identify, fill in the table:
+| Bounded Context | Responsibilities                                         | Owned Entities             | Team           |
+| --------------- | -------------------------------------------------------- | -------------------------- | -------------- |
+| Identity        | Manages who users are, handles registration and profiles | User, Session              | Platform       |
+| Game Library    | Manages the game catalog and game details                | Game, Genre                | Content        |
+| Activity        | Tracks player activity and gameplay events               | Activity, MatchHistory     | Analytics      |
+| Notification    | Sends emails, alerts, and real-time notifications        | Notification, QueueMessage | Communication  |
+| Logging         | Stores system logs and audit events                      | LogEntry, AuditRecord      | Infrastructure |
 
-| Bounded Context | Responsibilities                                         | Owned Entities | Team        |
-| --------------- | -------------------------------------------------------- | -------------- | ----------- |
-| Identity        | Manages who users are, handles registration and profiles | User, Session  | Platform    |
-| Game Library    | _(fill in)_                                              | _(fill in)_    | _(fill in)_ |
-| _(add more)_    |                                                          |                |             |
 
 There is no single correct answer: what matters is that you can justify each row.
 
@@ -56,7 +58,21 @@ Payload: { activity_id, user_id, action, game_id, timestamp }
 
 Focus on the flows that feel non-obvious. You do not need to document every possible pair.
 
----
+---Service Contracts
+gateway → identity-service
+Trigger: user logs in
+Protocol: REST
+Payload: { email, password }
+
+activity-service → logging-service
+Trigger: gameplay activity recorded
+Protocol: RabbitMQ event (async)
+Payload: { activity_id, user_id, action, timestamp }
+
+game-library-service → notification-service
+Trigger: new game added
+Protocol: RabbitMQ event (async)
+Payload: { game_id, title, release_date }
 
 ## Task 3 — Draw the service map _(~20 min)_
 
@@ -70,13 +86,45 @@ Draw the full GameHub service map:
 This can be a sketch on paper, a whiteboard photo, or ASCII art committed to your branch.
 
 ---
+                    +-------------+
+                    |   Gateway   |
+                    +-------------+
+                      /    |    \
+                     /     |     \
+                    v      v      v
+
+          +-------------+  +-------------+
+          | Identity    |  | Game Library|
+          | Service     |  | Service     |
+          +-------------+  +-------------+
+                 |                 |
+                 |                 |
+                 v                 v
+
+          +-------------+   - - - - - - - - -
+          | Activity    | - - > Notification |
+          | Service     |     (RabbitMQ)     |
+          +-------------+   - - - - - - - - -
+
+                 |
+                 |
+                 v
+
+          +-------------+
+          | Logging     |
+          | Service     |
+          +-------------+
 
 ## Discussion _(~15 min)_
 
 Three questions to discuss as a team before you leave:
 
 1. Why does `notification-service` use Node.js instead of Python like the rest? What does that tell you about microservices and technology choices?
+--Node.js is well suited for real-time communication and event-driven systems.
+This shows that microservices can use different technologies depending on the needs of each service.
+
 2. What is the risk of `activity-service` calling `logging-service` synchronously — why might you prefer an async event instead?
+
 3. Why does `logging-service` need a GDPR consent check before recording any activity?
 
 You do not need to write these answers down — they are warm-up for your REFLECTION.md.

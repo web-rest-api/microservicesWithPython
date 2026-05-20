@@ -24,7 +24,7 @@ Think about it from three angles: the developer who has to change code, the team
 
 > _Your answer:_
 
----
+---Splitting the monolith into separate services makes the system easier to manage and maintain. For developers, changing one service becomes safer because it does not risk breaking unrelated parts of the application. For deployment teams, each service can be updated independently without redeploying the entire system. For users, failures are more isolated, meaning one broken service does not necessarily take down the whole platform
 
 ## 2. Your choice
 
@@ -36,7 +36,7 @@ What would break, slow down, or become harder to manage if you merged those two 
 
 > _Your answer:_
 
----
+---We decided to separate the activity-service from the logging-service. The activity-service is responsible for gameplay actions, while the logging-service only stores logs and audit records. If both services were merged together, gameplay performance could be affected whenever logging becomes slow or unavailable. Keeping them separate also makes the system easier to scale and maintain because logging can grow independently from gameplay activity.
 
 ## 3. The tradeoff
 
@@ -48,6 +48,6 @@ No need to solve it: just name it honestly. This is exactly the tension the rest
 
 > _Your answer:_
 
----
+---Communication between components was simpler in the monolith because everything was inside the same application and database. In a distributed system, services must communicate over the network using REST APIs or async events, which adds complexity, latency, and more points of failure.
 
 _Keep this file. You will refer back to it during the oral presentation._
