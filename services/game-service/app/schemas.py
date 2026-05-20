@@ -1,10 +1,30 @@
-# Application layer — Pydantic DTOs.
+# Application layer — Pydantic DTOs (Data Transfer Objects).
 #
-# Define the shapes of data coming IN and going OUT of the API.
+# This file defines the shapes of data coming IN and going OUT of the API.
+# It is separate from models.py on purpose: the API shape is not always
+# the same as the database shape (e.g. password comes in, never goes out).
 #
 # This file should define:
-# - GameCreate  — fields accepted when creating a game
-#                 (title, genre, platform required; release_year and cover_url optional)
-# - GameOut     — fields returned to the caller (includes id and created_at)
-#                 add model_config = {"from_attributes": True}
-# - GameList    — paginated envelope: { items, total, limit, offset }
+# - UserCreate  — fields accepted when creating a user (includes plain password)
+# - UserOut     — fields returned to the caller (no password, ever)
+# - UserList    — paginated envelope: { items, total, limit, offset }
+#
+# Use model_config = {"from_attributes": True} on UserOut so Pydantic can
+# read directly from SQLAlchemy ORM objects.
+#
+# See the README for the full implementation.
+from pydantic import BaseModel
+
+
+class GameCreate(BaseModel):
+    title: str
+    genre: str
+    platform: str
+    cover_url: str
+
+
+class GameResponse(GameCreate):
+    id: int
+
+    class Config:
+        from_attributes = True

@@ -1,10 +1,30 @@
 # Infrastructure layer — database connection.
 #
-# Replicate the same structure as user-service/app/database.py.
-# The only difference: the default DATABASE_URL points to games.db.
+# This file is responsible for:
+# - Creating the SQLAlchemy engine from DATABASE_URL (read from .env)
+# - Defining the declarative Base that all ORM models inherit from
+# - Providing get_db(), a FastAPI dependency that opens a session per request
+#   and closes it when the request is done (using yield)
 #
-# This file should provide:
-# - engine         — SQLAlchemy engine built from DATABASE_URL
-# - SessionLocal   — session factory bound to the engine
-# - Base           — DeclarativeBase that all ORM models inherit from
-# - get_db()       — FastAPI dependency: yields a session, closes it after the request
+# Nothing in this file knows about Users, Games, or any business concept.
+# It is pure infrastructure.
+#
+# See the README for the full implementation.
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+DATABASE_URL = "sqlite:///./games.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+Base = declarative_base()

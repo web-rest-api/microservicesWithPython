@@ -1,26 +1,26 @@
-# game-service — your implementation
+# user-service — reference implementation
 
-This is the service you build in Module 2. Use `services/user-service/README.md` as your working reference — the structure is identical, only the entity changes.
+Read this before building `game-service`. Every file below is annotated to explain its role. The structure you see here is the one you must replicate.
 
 ---
 
 ## Folder structure
 
 ```
-game-service/
+user-service/
 ├── app/
 │   ├── __init__.py        # empty, makes app a package
 │   ├── main.py            # FastAPI app init, mounts the router
 │   ├── database.py        # engine + session factory
-│   ├── models.py          # SQLAlchemy ORM model (Game)
-│   ├── schemas.py         # Pydantic DTOs (GameCreate, GameOut)
+│   ├── models.py          # SQLAlchemy ORM model (User)
+│   ├── schemas.py         # Pydantic DTOs (UserCreate, UserOut)
 │   ├── repository.py      # raw DB queries — no business logic here
 │   ├── service.py         # business logic — calls repository
 │   └── routes.py          # FastAPI router + endpoint handlers
 ├── alembic/
 │   └── versions/          # auto-generated migration files go here
 ├── tests/
-│   └── test_games.py
+│   └── test_users.py
 ├── alembic.ini
 ├── requirements.txt
 └── .env.example
@@ -32,23 +32,22 @@ game-service/
 
 ### `app/models.py` — ORM model
 
-Defines the `games` table. This is the only file that knows about columns.
+Defines the `users` table. This is the only file that knows about columns.
 
 ```python
-from sqlalchemy import Column, String, Integer, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime
 from datetime import datetime, timezone
 import uuid
 from app.database import Base
 
-class Game(Base):
-    __tablename__ = "games"
+class User(Base):
+    __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = Column(String, nullable=False)
-    genre = Column(String, nullable=False)
-    platform = Column(String, nullable=False)
-    release_year = Column(Integer, nullable=True)
-    cover_url = Column(String, nullable=True)
+    username = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 ```
 
@@ -56,33 +55,29 @@ class Game(Base):
 
 ### `app/schemas.py` — Pydantic DTOs
 
-`GameCreate` = what comes **in**. `GameOut` = what goes **out**. Keep them separate.
+Two schemas: one for input, one for output. Keep them separate — the response shape is not always the same as the request shape.
 
 ```python
 from pydantic import BaseModel
 from datetime import datetime
 
-class GameCreate(BaseModel):
-    title: str
-    genre: str
-    platform: str
-    release_year: int | None = None
-    cover_url: str | None = None
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str          # plain-text on the way in — hash it in the service layer
 
-class GameOut(BaseModel):
+class UserOut(BaseModel):
     id: str
-    title: str
-    genre: str
-    platform: str
-    release_year: int | None
-    cover_url: str | None
+    username: str
+    email: str
+    is_active: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
-class GameList(BaseModel):
+class UserList(BaseModel):
     """Paginated envelope — all list endpoints return this shape."""
-    items: list[GameOut]
+    items: list[UserOut]
     total: int
     limit: int
     offset: int
@@ -99,7 +94,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./games.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./users.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -123,21 +118,27 @@ Functions here take a `Session` and return ORM objects. No HTTP, no business rul
 
 ```python
 from sqlalchemy.orm import Session
-from app.models import Game
-from app.schemas import GameCreate
+from app.models import User
+from app.schemas import UserCreate
 
-def create_game(db: Session, data: GameCreate) -> Game:
-    ...
+def create_user(db: Session, data: UserCreate, hashed_password: str) -> User:
+    user = User(
+        username=data.username,
+        email=data.email,
+        hashed_password=hashed_password,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
-def get_game(db: Session, game_id: str) -> Game | None:
-    ...
+def get_user(db: Session, user_id: str) -> User | None:
+    return db.query(User).filter(User.id == user_id).first()
 
-def list_games(db: Session, limit: int = 20, offset: int = 0) -> tuple[list[Game], int]:
-    ...
-
-def search_games(db: Session, q: str, limit: int = 20, offset: int = 0) -> tuple[list[Game], int]:
-    # hint: use .filter(Game.title.ilike(f"%{q}%"))
-    ...
+def list_users(db: Session, limit: int = 20, offset: int = 0) -> tuple[list[User], int]:
+    total = db.query(User).count()
+    users = db.query(User).offset(offset).limit(limit).all()
+    return users, total
 ```
 
 ---
@@ -149,21 +150,34 @@ Calls the repository and returns Pydantic schemas (not raw ORM objects) to the r
 ```python
 from sqlalchemy.orm import Session
 from app import repository
-from app.schemas import GameCreate, GameOut, GameList
+from app.schemas import UserCreate, UserOut, UserList
 
-def add_game(db: Session, data: GameCreate) -> GameOut:
-    ...
+def _hash_password(plain: str) -> str:
+    # for now a placeholder — swap for passlib in Module 6
+    return plain + "_hashed"
 
-def fetch_game(db: Session, game_id: str) -> GameOut:
-    # raise ValueError if not found — routes.py turns it into a 404
-    ...
+def add_user(db: Session, data: UserCreate) -> UserOut:
+    hashed = _hash_password(data.password)
+    user = repository.create_user(db, data, hashed)
+    return UserOut.model_validate(user)
 
-def fetch_all_games(db: Session, limit: int = 20, offset: int = 0) -> GameList:
-    ...
+def fetch_user(db: Session, user_id: str) -> UserOut:
+    user = repository.get_user(db, user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+    return UserOut.model_validate(user)
 
-def find_games(db: Session, q: str, limit: int = 20, offset: int = 0) -> GameList:
-    ...
+def fetch_all_users(db: Session, limit: int = 20, offset: int = 0) -> UserList:
+    users, total = repository.list_users(db, limit=limit, offset=offset)
+    return UserList(
+        items=[UserOut.model_validate(u) for u in users],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 ```
+
+The `ValueError` raised here gets caught in `routes.py` and turned into an HTTP 404.
 
 ---
 
@@ -171,31 +185,28 @@ def find_games(db: Session, q: str, limit: int = 20, offset: int = 0) -> GameLis
 
 One function per endpoint. Routes only call service functions — never the repository directly.
 
-> **Order matters**: `/search` must be declared **before** `/{game_id}`, otherwise FastAPI will try to match the word "search" as an integer ID and return a 422.
-
 ```python
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import service, schemas
 
-router = APIRouter(prefix="/v1/games", tags=["games"])
+router = APIRouter(prefix="/v1/users", tags=["users"])
 
-@router.post("/", response_model=schemas.GameOut, status_code=201)
-def create_game(data: schemas.GameCreate, db: Session = Depends(get_db)):
-    ...
+@router.post("/", response_model=schemas.UserOut, status_code=201)
+def create_user(data: schemas.UserCreate, db: Session = Depends(get_db)):
+    return service.add_user(db, data)
 
-@router.get("/", response_model=schemas.GameList)
-def list_games(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
-    ...
+@router.get("/", response_model=schemas.UserList)
+def list_users(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
+    return service.fetch_all_users(db, limit=limit, offset=offset)
 
-@router.get("/search", response_model=schemas.GameList)
-def search_games(q: str, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
-    ...
-
-@router.get("/{game_id}", response_model=schemas.GameOut)
-def get_game(game_id: str, db: Session = Depends(get_db)):
-    ...
+@router.get("/{user_id}", response_model=schemas.UserOut)
+def get_user(user_id: str, db: Session = Depends(get_db)):
+    try:
+        return service.fetch_user(db, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 ```
 
 ---
@@ -206,7 +217,7 @@ def get_game(game_id: str, db: Session = Depends(get_db)):
 from fastapi import FastAPI
 from app.routes import router
 
-app = FastAPI(title="game-service")
+app = FastAPI(title="user-service")
 app.include_router(router)
 ```
 
@@ -229,7 +240,7 @@ aiosqlite
 ### `.env.example`
 
 ```
-DATABASE_URL=sqlite:///./games.db
+DATABASE_URL=sqlite:///./users.db
 ```
 
 Copy to `.env` before running. Never commit `.env`.

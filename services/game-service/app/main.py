@@ -1,9 +1,20 @@
 # Entry point — FastAPI application.
 #
-# Create the FastAPI app instance and register the router from app.routes.
+# This file creates the FastAPI app instance and registers the router.
 # Keep it minimal: no business logic, no endpoints defined here.
 #
 # To run the service locally:
-#   uvicorn app.main:app --reload --port 8002
+#   uvicorn app.main:app --reload --port 8001
 #
-# Then open: http://localhost:8002/docs
+# Then open: http://localhost:8001/docs
+#
+# See the README for the full implementation.
+from fastapi import FastAPI
+from app.routes import router
+from app.database import Base, engine
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
+app.include_router(router)
