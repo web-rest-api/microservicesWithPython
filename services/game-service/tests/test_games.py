@@ -14,3 +14,5 @@
 #
 # Run tests with:
 #   pytest tests/
+def test_placeholder():
+    assert True
