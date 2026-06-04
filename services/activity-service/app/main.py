@@ -9,6 +9,7 @@
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
+from app.infrastructure.rabbitmq_publisher import publish_activity_event
 
 from app.config import settings
 from app.database import Base, engine, get_db
@@ -24,40 +25,48 @@ app = FastAPI(title="activity-service")
 # ---------------------------------------------------------------------------
 
 async def validate_user(user_id: str) -> None:
-    """
-    Verify that the user exists in user-service before logging an activity.
+    retries = 2
 
-    Call: GET {settings.user_service_url}/v1/users/{user_id}
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"{settings.user_service_url}/v1/users/{user_id}"
+                )
 
-    Behaviour:
-    - 200  → user exists, return normally (None)
-    - 404  → raise HTTPException(status_code=404, detail="User not found")
-    - Network error (httpx.RequestError) → retry the call once, then raise
-             HTTPException(status_code=503, detail="user-service unavailable")
-    - Any other non-2xx status → raise HTTPException(status_code=503, ...)
+            if response.status_code == 200:
+                return
 
-    Use `async with httpx.AsyncClient(timeout=5.0) as client:` for HTTP calls.
-    This call is CRITICAL — the request must not proceed if validation fails.
-    """
-    raise NotImplementedError
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            raise HTTPException(
+                status_code=503,
+                detail="user-service unavailable"
+            )
+
+        except httpx.RequestError:
+            if attempt == retries - 1:
+                raise HTTPException(
+                    status_code=503,
+                    detail="user-service unavailable"
+                )
 
 
 async def fetch_game(game_id: str) -> dict | None:
-    """
-    Fetch game data from game-service to enrich the activity response.
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{settings.game_service_url}/v1/games/{game_id}"
+            )
 
-    Call: GET {settings.game_service_url}/v1/games/{game_id}
+        if response.status_code == 200:
+            return response.json()
 
-    Behaviour:
-    - 200  → return the response JSON as a dict
-    - Any non-2xx status OR network error → return None (do NOT raise)
+    except httpx.RequestError:
+        pass
 
-    This call is OPTIONAL — the activity is saved regardless of the result.
-    Graceful degradation is the goal: the response will include "game": null
-    when game-service is unreachable.
-    """
-    raise NotImplementedError
-
+    return None
 
 # ---------------------------------------------------------------------------
 # Endpoints — pre-written, they call your two functions above
@@ -71,8 +80,19 @@ def health():
 @app.post("/v1/activities", response_model=schemas.ActivityOut, status_code=201)
 async def create_activity(data: schemas.ActivityCreate, db: Session = Depends(get_db)):
     await validate_user(data.user_id)
+
     activity = repository.create_activity(db, data)
     game_data = await fetch_game(activity.game_id)
+
+    game_title = game_data["title"] if game_data else None
+
+    await publish_activity_event(
+        user_id=activity.user_id,
+        game_id=activity.game_id,
+        action=activity.action,
+        game_title=game_title,
+    )
+
     return {
         "id": activity.id,
         "user_id": activity.user_id,
@@ -81,7 +101,6 @@ async def create_activity(data: schemas.ActivityCreate, db: Session = Depends(ge
         "created_at": activity.created_at,
         "game": game_data,
     }
-
 
 @app.get("/v1/activities", response_model=schemas.ActivityList)
 async def list_activities(limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
