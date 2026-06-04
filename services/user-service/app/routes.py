@@ -1,16 +1,18 @@
-# Interface layer — HTTP endpoints.
-#
-# This file defines the FastAPI router and maps HTTP verbs + paths to
-# service function calls. It is the only layer that knows about HTTP.
-#
-# Rules:
-# - Never call repository functions directly — always go through service
-# - Catch ValueError from the service layer and raise HTTPException instead
-# - Use Depends(get_db) to inject the database session
-#
-# This file should expose:
-# - POST   /v1/users/          -> create a user
-# - GET    /v1/users/          -> list users (with limit/offset pagination)
-# - GET    /v1/users/{user_id} -> get one user by ID (404 if not found)
-#
-# See the README for the full implementation.
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.database import SessionLocal
+from app.service import fetch_users
+
+router = APIRouter(prefix="/v1/users", tags=["users"])
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.get("")
+def get_users(db: Session = Depends(get_db)):
+    return fetch_users(db)

@@ -1,11 +1,9 @@
 fastapi
-uvicorn[standard]
+uvicorn
 sqlalchemy
-alembic
 pydantic
-pydantic-settings
-python-dotenv
+alembic
+pytest
 aiosqlite
-asyncpg
-redis
-python-jose[cryptography]
+ruff
+mypy
